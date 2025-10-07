@@ -1,0 +1,37 @@
+# Exclude non-agent assets from LiveKit agent deploy bundles
+# Keep only the Python agent code and required files
+
+# Frontend app (served locally or separately)
+frontend/
+
+# Node package folders (pnpm/yarn/npm)
+**/node_modules/**
+**/.pnpm/**
+**/.pnpm-store/**
+
+# Build artifacts
+**/dist/**
+**/build/**
+
+# VCS / CI / misc
+.git/
+.github/
+
+# Tests/evals not needed for runtime
+test/
+tests/
+eval/
+evals/
+
+# Local envs & caches
+.venv/
+venv/
+__pycache__/
+.DS_Store
+
+# Logs
+*.log
+*.gz
+*.tgz
+.tmp
+

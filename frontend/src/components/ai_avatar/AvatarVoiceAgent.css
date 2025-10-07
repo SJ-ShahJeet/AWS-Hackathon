@@ -1,0 +1,48 @@
+.voice-assistant-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 800px; /* Reduced from 1200px */
+  padding: 16px;
+  height: auto; /* Removed full-height constraint */
+  box-sizing: border-box;
+}
+
+.visualizer-container {
+  width: 100%;
+  height: 100px; /* Shrunk from 300px */
+  margin: 0 auto;
+}
+
+.control-section {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.conversation {
+  padding: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  width: 100%;
+  border: 1px solid #eaeaea;
+  border-radius: 8px;
+  margin-top: 16px;
+  background-color: #fff;
+}
+
+.message {
+  margin-bottom: 8px;
+}
+
+.message-agent {
+  color: #4a90e2;
+}
+
+.message-user {
+  color: #2ecc71;
+}
+
+.message-text {
+  color: #333;
+}
