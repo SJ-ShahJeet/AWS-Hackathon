@@ -45,7 +45,7 @@ function devApiMiddleware(env: Record<string, string>): Plugin {
             const avatarId = url.searchParams.get('avatar_id');
             let room = url.searchParams.get('room') || '';
             if (!room) {
-              const avatarSuffix = (avatar === 'hedra' || avatar === 'tavus') ? avatar : null;
+              const avatarSuffix = (avatar === 'anam' || avatar === 'hedra' || avatar === 'tavus') ? avatar : null;
               room = `room-${Math.random().toString(36).slice(2, 10)}`;
               if (avatarSuffix) {
                 room = `${room}-a-${avatarSuffix}`;

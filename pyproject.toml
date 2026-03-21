@@ -6,13 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "agent-starter-python"
 version = "1.0.0"
 description = "Simple voice AI assistant built with LiveKit Agents for Python"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 dependencies = [
-    "livekit-agents[silero,turn-detector,tavus,hedra]~=1.2",
+    "livekit-agents[silero,turn-detector,tavus,hedra,anam]~=1.4",
     "livekit-agents[images]",
-    "livekit-plugins-elevenlabs~=1.0",
-    "livekit-plugins-noise-cancellation~=0.2",
+    "livekit-plugins-elevenlabs",
+    "livekit-plugins-noise-cancellation",
     "python-dotenv",
     "requests",
     "pydantic-ai-slim[openai,mcp]",
@@ -37,7 +37,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]

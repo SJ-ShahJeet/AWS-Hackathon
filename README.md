@@ -6,6 +6,28 @@
 
 A complete starter project for building voice AI apps with [LiveKit Agents for Python](https://github.com/livekit/agents) and [LiveKit Cloud](https://cloud.livekit.io/).
 
+## Run locally
+
+Configure `.env.local` with your LiveKit keys first (see [Dev Setup](#dev-setup)).
+
+```console
+uv sync
+cd frontend && npm install && cd ..
+uv run python src/agent.py download-files
+```
+
+`download-files` is only needed once (or after plugin/model updates). Then start the agent and the web UI in **two terminals** from the repository root:
+
+```console
+uv run python src/agent.py dev
+```
+
+```console
+cd frontend && npm run dev
+```
+
+Open the app at [http://localhost:5173/](http://localhost:5173/). Other modes: `uv run python src/agent.py console` (terminal voice), `uv run python src/agent.py start` (production-style worker).
+
 The starter project includes:
 
 - A simple voice AI assistant, ready for extension and customization

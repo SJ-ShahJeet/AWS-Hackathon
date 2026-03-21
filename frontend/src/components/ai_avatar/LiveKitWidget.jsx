@@ -17,6 +17,7 @@ const buildApiUrl = (path) => {
 
 const AVATAR_OPTIONS = [
   { value: "none", label: "None" },
+  { value: "anam", label: "Anam" },
   { value: "tavus", label: "Tavus" },
   { value: "hedra", label: "Hedra" },
 ];
@@ -42,7 +43,7 @@ const LiveKitWidget = ({ setShowSupport }) => {
   const [token, setToken] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(true);
-  const [avatarProvider, setAvatarProvider] = useState("tavus");
+  const [avatarProvider, setAvatarProvider] = useState("anam");
   const [hedraAvatar, setHedraAvatar] = useState(loadHedraAvatar);
   const [defaultHedraAvatarId, setDefaultHedraAvatarId] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -98,7 +99,7 @@ const LiveKitWidget = ({ setShowSupport }) => {
     setIsConnecting(true);
     try {
       const params = new URLSearchParams({ name: "admin" });
-      if (avatarProvider === "tavus" || avatarProvider === "hedra") {
+      if (avatarProvider !== "none") {
         params.set("avatar", avatarProvider);
         if (avatarProvider === "hedra" && hedraAssetId) {
           params.set("avatar_id", hedraAssetId);

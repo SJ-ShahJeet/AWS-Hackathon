@@ -23,7 +23,7 @@ export default async(req, res) => {
 
     if (!room) {
         const providerSuffix = provider || process.env.DEFAULT_TTS_PROVIDER;
-        const avatarSuffix = (avatar === 'hedra' || avatar === 'tavus') ? avatar : null;
+        const avatarSuffix = (avatar === 'anam' || avatar === 'hedra' || avatar === 'tavus') ? avatar : null;
         let newRoomName = `room-${uuidv4().substring(0, 8)}`;
         if (providerSuffix) {
             newRoomName = `${newRoomName}-prov-${providerSuffix}`;
