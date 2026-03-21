@@ -41,6 +41,13 @@ lk cloud auth
 lk app env -w -d .env.local
 ```
 
+### Avatar providers (Tavus & Hedra)
+
+The Concierge supports two avatar providers. Use the in-app toggle to switch:
+
+- **Tavus**: Set `ENABLE_AVATAR=true`, `TAVUS_API_KEY`, `REPLICA_ID`, `PERSONA_ID`
+- **Hedra Live Avatar**: Set `HEDRA_API_KEY`. Optionally set `HEDRA_DEFAULT_AVATAR_ID` for a default avatar when users haven't uploaded their own. When Hedra is selected, upload a portrait in the setup pane or use the default.
+
 ## Run the agent
 
 Before your first run, you must download certain models such as [Silero VAD](https://docs.livekit.io/agents/build/turns/vad/) and the [LiveKit turn detector](https://docs.livekit.io/agents/build/turns/turn-detector/):

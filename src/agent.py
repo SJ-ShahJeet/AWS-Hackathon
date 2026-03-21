@@ -14,7 +14,7 @@ from livekit.agents import (
     cli,
     metrics,
 )
-from livekit.plugins import noise_cancellation, silero, tavus
+from livekit.plugins import elevenlabs, hedra, noise_cancellation, silero, tavus
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from mcp_client.agent_tools import MCPToolsIntegration
@@ -26,11 +26,13 @@ logger = logging.getLogger("agent")
 # Load environment from repo root `.env.local` regardless of CWD
 repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 root_env_path = os.path.join(repo_root, ".env.local")
+frontend_env_path = os.path.join(repo_root, "frontend", ".env.local")
 
 if os.path.exists(root_env_path):
     load_dotenv(root_env_path, override=False)
-else:
-    # Fallback: search upwards from current working directory
+if os.path.exists(frontend_env_path):
+    load_dotenv(frontend_env_path, override=False)
+if not os.path.exists(root_env_path):
     discovered = find_dotenv(".env.local", usecwd=True)
     if discovered:
         load_dotenv(discovered, override=False)
@@ -88,9 +90,12 @@ async def entrypoint(ctx: JobContext):
         # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
         # See all available models at https://docs.livekit.io/agents/models/llm/
         llm="google/gemini-2.5-flash-lite",
-        # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-        # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
-        tts="elevenlabs/eleven_flash_v2_5",
+        # Text-to-speech (TTS) via ElevenLabs plugin for custom voices (LiveKit Inference only supports default voices)
+        tts=elevenlabs.TTS(
+            voice_id=(os.environ.get("ELEVENLABS_VOICE_ID") or "ZMWIEDLYkh84bAIlHt0B").strip(),
+            model="eleven_flash_v2_5",
+            api_key=os.environ.get("ELEVENLABS_API_KEY") or os.environ.get("ELEVEN_API_KEY"),
+        ),
         # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
         # See more at https://docs.livekit.io/agents/build/turns
         turn_detection=MultilingualModel(),
@@ -126,9 +131,39 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
-    # Conditionally start Tavus avatar based on ENABLE_AVATAR flag
-    enable_avatar = os.environ.get("ENABLE_AVATAR", "false").lower() == "true"
-    if enable_avatar:
+    # Avatar provider: from room name (-a-hedra[-{id}], -a-tavus) or ENABLE_AVATAR default
+    room_name = ctx.room.name
+    avatar_provider: Optional[str] = None
+    hedra_avatar_id = ""
+    if "-a-hedra" in room_name:
+        avatar_provider = "hedra"
+        # Room format: room-xxx-a-hedra or room-xxx-a-hedra-{uuid}
+        prefix = "-a-hedra-"
+        if prefix in room_name:
+            hedra_avatar_id = room_name.split(prefix, 1)[1].strip()
+    elif "-a-tavus" in room_name:
+        avatar_provider = "tavus"
+    elif os.environ.get("ENABLE_AVATAR", "false").lower() == "true":
+        avatar_provider = "tavus"
+
+    if avatar_provider == "hedra":
+        hedra_api_key = (os.environ.get("HEDRA_API_KEY") or "").strip()
+        hedra_avatar_id = hedra_avatar_id.strip()
+        if hedra_api_key and hedra_avatar_id:
+            avatar = hedra.AvatarSession(
+                avatar_id=hedra_avatar_id,
+                api_key=hedra_api_key,
+            )
+            logger.info("Starting Hedra avatar session...")
+            try:
+                await avatar.start(session, room=ctx.room)
+                logger.info("Hedra avatar started")
+            except Exception as e:
+                logger.error(f"Hedra avatar start error: {e.__class__.__name__}: {e}")
+                raise
+        else:
+            logger.warning("Hedra requested but HEDRA_API_KEY or HEDRA_AVATAR_ID missing")
+    elif avatar_provider == "tavus":
         tavus_replica_id = (os.environ.get("REPLICA_ID") or "").strip()
         tavus_persona_id = (os.environ.get("PERSONA_ID") or "").strip()
         tavus_api_key = (os.environ.get("TAVUS_API_KEY") or "").strip()
@@ -151,7 +186,6 @@ async def entrypoint(ctx: JobContext):
             api_key=tavus_api_key,
         )
         logger.info("Starting Tavus avatar session...")
-        # Start the avatar and wait for it to join
         try:
             await avatar.start(session, room=ctx.room)
             logger.info("Tavus avatar started")
@@ -159,7 +193,7 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"Tavus avatar start error: {e.__class__.__name__}: {e}")
             raise
     else:
-        logger.info("Avatar disabled (ENABLE_AVATAR=False)")
+        logger.info("Avatar disabled")
 
     # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(

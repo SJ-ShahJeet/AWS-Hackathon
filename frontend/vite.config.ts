@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { AccessToken } from 'livekit-server-sdk';
+import { handleHedraUpload } from "./scripts/hedra-upload.js";
 
 function devApiMiddleware(env: Record<string, string>): Plugin {
   return {
@@ -10,6 +11,10 @@ function devApiMiddleware(env: Record<string, string>): Plugin {
     apply: "serve",
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
+        if (req.method === "POST" && req.url?.startsWith("/api/hedra/upload")) {
+          await handleHedraUpload(req, res, env);
+          return;
+        }
         if (req.url && req.url.startsWith('/api/config')) {
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -17,6 +22,7 @@ function devApiMiddleware(env: Record<string, string>): Plugin {
             enableAvatar: true,
             providers: { voice: [] },
             defaultTtsProvider: '',
+            defaultHedraAvatarId: env.HEDRA_DEFAULT_AVATAR_ID?.trim() || null,
           }));
           return;
         }
@@ -35,10 +41,18 @@ function devApiMiddleware(env: Record<string, string>): Plugin {
 
             const url = new URL(req.url, 'http://localhost');
             const name = url.searchParams.get('name') || 'guest';
+            const avatar = url.searchParams.get('avatar');
+            const avatarId = url.searchParams.get('avatar_id');
             let room = url.searchParams.get('room') || '';
             if (!room) {
-              // create a unique room name for dev sessions
+              const avatarSuffix = (avatar === 'hedra' || avatar === 'tavus') ? avatar : null;
               room = `room-${Math.random().toString(36).slice(2, 10)}`;
+              if (avatarSuffix) {
+                room = `${room}-a-${avatarSuffix}`;
+                if (avatarSuffix === 'hedra' && avatarId) {
+                  room = `${room}-${avatarId}`;
+                }
+              }
             }
 
             const at = new AccessToken(apiKey, apiSecret, {
@@ -76,7 +90,8 @@ function devApiMiddleware(env: Record<string, string>): Plugin {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  const rootEnv = loadEnv(mode, path.resolve(process.cwd(), ".."), "");
+  const env = { ...rootEnv, ...loadEnv(mode, process.cwd(), "") };
   return ({
   server: {
     proxy: {

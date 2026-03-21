@@ -17,15 +17,22 @@ export default async(req, res) => {
 
     const roomService = new RoomServiceClient(livekitHost, apiKey, apiSecret);
 
-    const { name, provider } = req.query;
+    const { name, provider, avatar, avatar_id } = req.query;
     let { room } = req.query;
     const participantName = name || 'participant-' + uuidv4();
 
     if (!room) {
         const providerSuffix = provider || process.env.DEFAULT_TTS_PROVIDER;
+        const avatarSuffix = (avatar === 'hedra' || avatar === 'tavus') ? avatar : null;
         let newRoomName = `room-${uuidv4().substring(0, 8)}`;
         if (providerSuffix) {
             newRoomName = `${newRoomName}-prov-${providerSuffix}`;
+        }
+        if (avatarSuffix) {
+            newRoomName = `${newRoomName}-a-${avatarSuffix}`;
+            if (avatarSuffix === 'hedra' && avatar_id) {
+                newRoomName = `${newRoomName}-${avatar_id}`;
+            }
         }
 
         const rooms = await roomService.listRooms();
@@ -34,6 +41,12 @@ export default async(req, res) => {
             newRoomName = `room-${uuidv4().substring(0, 8)}`;
             if (providerSuffix) {
                 newRoomName = `${newRoomName}-prov-${providerSuffix}`;
+            }
+            if (avatarSuffix) {
+                newRoomName = `${newRoomName}-a-${avatarSuffix}`;
+                if (avatarSuffix === 'hedra' && avatar_id) {
+                    newRoomName = `${newRoomName}-${avatar_id}`;
+                }
             }
         }
         room = newRoomName;
