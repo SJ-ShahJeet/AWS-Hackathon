@@ -21,14 +21,15 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-# Install build dependencies required for Python packages with native extensions
-# gcc: C compiler needed for building Python packages with C extensions
-# python3-dev: Python development headers needed for compilation
-# We clean up the apt cache after installation to keep the image size down
+# Install build dependencies and Node.js (for gws Google Workspace CLI)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     python3-dev \
+    nodejs \
+    npm \
+  && npm install -g @googleworkspace/cli \
+  && rm -rf /root/.npm \
   && rm -rf /var/lib/apt/lists/*
 
 # Create a new directory for our application code

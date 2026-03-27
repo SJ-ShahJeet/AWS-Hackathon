@@ -90,9 +90,10 @@ function devApiMiddleware(env: Record<string, string>): Plugin {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  const rootEnv = loadEnv(mode, path.resolve(process.cwd(), ".."), "");
-  const env = { ...rootEnv, ...loadEnv(mode, process.cwd(), "") };
+  const repoRoot = path.resolve(__dirname, "..");
+  const env = loadEnv(mode, repoRoot, "");
   return ({
+  envDir: repoRoot,
   server: {
     proxy: {
       "/api": {

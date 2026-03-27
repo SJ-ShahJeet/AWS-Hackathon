@@ -8,7 +8,7 @@ A complete starter project for building voice AI apps with [LiveKit Agents for P
 
 ## Run locally
 
-Configure `.env.local` with your LiveKit keys first (see [Dev Setup](#dev-setup)).
+Configure `.env` at the repository root with your keys first (see [Dev Setup](#dev-setup)).
 
 ```console
 uv sync
@@ -50,17 +50,18 @@ cd agent-starter-python
 uv sync
 ```
 
-Sign up for [LiveKit Cloud](https://cloud.livekit.io/) then set up the environment by copying `.env.example` to `.env.local` and filling in the required keys:
+Sign up for [LiveKit Cloud](https://cloud.livekit.io/) then copy `.env.example` to `.env` and fill in the required keys:
 
 - `LIVEKIT_URL`
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
+- `VITE_LIVEKIT_URL` (same WebSocket URL as `LIVEKIT_URL`, for the web UI)
 
 You can load the LiveKit environment automatically using the [LiveKit CLI](https://docs.livekit.io/home/cli/cli-setup):
 
 ```bash
 lk cloud auth
-lk app env -w -d .env.local
+lk app env -w -d .env
 ```
 
 ### Avatar providers (Tavus & Hedra)

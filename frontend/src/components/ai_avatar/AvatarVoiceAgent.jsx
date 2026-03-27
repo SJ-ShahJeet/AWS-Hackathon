@@ -5,6 +5,7 @@ import {
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { useTracks, VideoTrack } from '@livekit/components-react';
+import AvatarChatPanel from "./AvatarChatPanel";
 import "./AvatarVoiceAgent.css";
 
 const AvatarVoiceAgent = () => {
@@ -12,17 +13,22 @@ const AvatarVoiceAgent = () => {
   const trackRefs = useTracks([Track.Source.Camera]);
   const remoteCamTrackRef = trackRefs.find((trackRef) => !trackRef.participant.isLocal);
 
+  const avatarLoaded = !!remoteCamTrackRef;
+
   return (
     <div className="voice-assistant-container">
-      <div className="visualizer-container">
-        <BarVisualizer state={state} barCount={5} trackRef={audioTrack} />
+      {!avatarLoaded && (
+        <div className="visualizer-container">
+          <BarVisualizer state={state} barCount={5} trackRef={audioTrack} />
+        </div>
+      )}
+      <div className="avatar-video">
+        {avatarLoaded ? <VideoTrack trackRef={remoteCamTrackRef} /> : <div>Calling the Concierge...</div>}
       </div>
-      <>
-      {remoteCamTrackRef ? <VideoTrack trackRef={remoteCamTrackRef} /> : <div>Calling the Concierge...</div>}
-      </>
       <div className="control-section">
         <VoiceAssistantControlBar />
       </div>
+      <AvatarChatPanel />
     </div>
   );
 };

@@ -9,10 +9,8 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-# Load .env.local from repo root
 repo_root = Path(__file__).resolve().parent.parent
-env_path = repo_root / ".env.local"
-load_dotenv(env_path)
+load_dotenv(repo_root / ".env", override=True)
 
 HEDRA_API_KEY = os.environ.get("HEDRA_API_KEY", "").strip()
 BASE_URL = "https://api.hedra.com/web-app/public"
@@ -46,7 +44,7 @@ def upload_file(asset_id: str, file_path: Path) -> None:
 
 def main() -> None:
     if not HEDRA_API_KEY:
-        print("HEDRA_API_KEY not set in .env.local", file=sys.stderr)
+        print("HEDRA_API_KEY not set in .env", file=sys.stderr)
         sys.exit(1)
 
     image_path = repo_root / "assets" / "avatar.png"
@@ -63,7 +61,7 @@ def main() -> None:
     upload_file(asset_id, image_path)
     print("Upload complete.")
 
-    env_file = repo_root / ".env.local"
+    env_file = repo_root / ".env"
     if env_file.exists():
         content = env_file.read_text()
         if "HEDRA_DEFAULT_AVATAR_ID=" in content:
@@ -81,7 +79,7 @@ def main() -> None:
             print(f"Added HEDRA_DEFAULT_AVATAR_ID to {env_file}")
     else:
         print(f"\nHEDRA_DEFAULT_AVATAR_ID={asset_id}")
-        print("Add to your .env.local file.")
+        print("Add to your .env file.")
 
 
 if __name__ == "__main__":

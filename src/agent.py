@@ -1,12 +1,17 @@
+import asyncio
+import json
 import logging
 import os
-from typing import Callable, Optional, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import aiohttp
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
+from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentSession,
+    FunctionToolsExecutedEvent,
     JobContext,
     JobProcess,
     MetricsCollectedEvent,
@@ -15,9 +20,17 @@ from livekit.agents import (
     cli,
     metrics,
 )
+from livekit.agents.llm import (
+    FunctionTool,
+    ProviderTool,
+    RawFunctionTool,
+    Tool,
+    Toolset,
+)
 from livekit.plugins import anam, elevenlabs, hedra, noise_cancellation, silero, tavus
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
+from google_tools import GOOGLE_TOOLS, google_credentials_configured, setup_google_credentials
 from mcp_client.agent_tools import MCPToolsIntegration
 from mcp_client.server import MCPServerSse
 from tools import open_url
@@ -25,19 +38,93 @@ from tools import open_url
 logger = logging.getLogger("agent")
 
 AVATAR_PROVIDERS = ("anam", "hedra", "tavus")
+AGENT_TOOL_TOPIC = "lk.agent.tool"
+AGENT_TOOL_CATALOG_TOPIC = "lk.agent.catalog"
+_TOOL_UI_OUTPUT_MAX = 4000
+
+
+def _collect_tool_catalog_rows(agent: Agent) -> list[dict[str, str]]:
+    """Flatten session tools into name + description for the UI catalog."""
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(name: str, description: str) -> None:
+        if name in seen:
+            return
+        seen.add(name)
+        rows.append({"name": name, "description": description})
+
+    def walk(tool: Tool | Toolset) -> None:
+        if isinstance(tool, FunctionTool):
+            desc = (tool.info.description or "").strip()
+            add(tool.info.name, desc)
+        elif isinstance(tool, RawFunctionTool):
+            desc = ""
+            raw = tool.info.raw_schema
+            if isinstance(raw, dict):
+                d = raw.get("description")
+                if isinstance(d, str):
+                    desc = d.strip()
+            add(tool.info.name, desc)
+        elif isinstance(tool, Toolset):
+            for inner in tool.tools:
+                walk(inner)
+        elif isinstance(tool, ProviderTool):
+            add(tool.id, "")
+
+    for t in agent.tools:
+        walk(t)
+
+    return rows
+
+
+def _parse_tool_arguments(raw_arguments: str | None) -> Any:
+    if not raw_arguments:
+        return {}
+    try:
+        return json.loads(raw_arguments)
+    except json.JSONDecodeError:
+        return {"_raw": raw_arguments}
+
+
+def _extract_tool_rows_from_event(
+    ev: Any, *, include_outputs: bool
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not hasattr(ev, "zipped"):
+        return rows
+
+    try:
+        zipped = ev.zipped()
+    except Exception:
+        return rows
+
+    for call, out in zipped:
+        output: str | None = None
+        is_error = False
+
+        if include_outputs and out is not None:
+            output = out.output
+            if output and len(output) > _TOOL_UI_OUTPUT_MAX:
+                output = output[:_TOOL_UI_OUTPUT_MAX] + "…"
+            is_error = out.is_error
+
+        rows.append(
+            {
+                "name": call.name,
+                "arguments": _parse_tool_arguments(call.arguments),
+                "output": output,
+                "is_error": is_error,
+                "call_id": call.call_id,
+            }
+        )
+
+    return rows
 
 repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-root_env_path = os.path.join(repo_root, ".env.local")
-frontend_env_path = os.path.join(repo_root, "frontend", ".env.local")
-
-if os.path.exists(root_env_path):
-    load_dotenv(root_env_path, override=False)
-if os.path.exists(frontend_env_path):
-    load_dotenv(frontend_env_path, override=False)
-if not os.path.exists(root_env_path):
-    discovered = find_dotenv(".env.local", usecwd=True)
-    if discovered:
-        load_dotenv(discovered, override=False)
+_env_path = os.path.join(repo_root, ".env")
+if os.path.exists(_env_path):
+    load_dotenv(_env_path, override=True)
 
 
 def _env(key: str) -> str:
@@ -45,7 +132,7 @@ def _env(key: str) -> str:
 
 
 class Assistant(Agent):
-    def __init__(self, tools: Optional[Sequence[Callable]] = None) -> None:
+    def __init__(self, tools: Sequence[Callable] | None = None) -> None:
         merged_tools = [open_url]
         if tools:
             merged_tools.extend(list(tools))
@@ -67,7 +154,7 @@ def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
 
-def _parse_avatar_provider(room_name: str) -> tuple[Optional[str], str]:
+def _parse_avatar_provider(room_name: str) -> tuple[str | None, str]:
     """Extract avatar provider and optional extra ID from room name."""
     for provider in AVATAR_PROVIDERS:
         marker = f"-a-{provider}"
@@ -126,7 +213,7 @@ def _build_avatar_session(
     extra_id: str,
     *,
     anam_avatar_id: str | None = None,
-) -> Optional[anam.AvatarSession | hedra.AvatarSession | tavus.AvatarSession]:
+) -> anam.AvatarSession | hedra.AvatarSession | tavus.AvatarSession | None:
     """Build the avatar session object for the given provider, or None if misconfigured."""
     if provider == "anam":
         api_key = _env("ANAM_API_KEY")
@@ -163,6 +250,11 @@ def _build_avatar_session(
 async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {"room": ctx.room.name}
 
+    setup_google_credentials()
+    google_tools = GOOGLE_TOOLS if google_credentials_configured() else []
+    if google_tools:
+        logger.info("Google Workspace tools enabled (%d tools)", len(google_tools))
+
     mcp_url = os.environ.get("MCP_URL")
     mcp_api_key = os.environ.get("MCP_API_KEY")
     if mcp_url:
@@ -177,14 +269,15 @@ async def entrypoint(ctx: JobContext):
         agent = await MCPToolsIntegration.create_agent_with_tools(
             agent_class=Assistant,
             mcp_servers=[mcp_server],
+            agent_kwargs={"tools": google_tools} if google_tools else {},
         )
     else:
         logger.info("MCP_URL not found, starting agent without MCP tools")
-        agent = Assistant()
+        agent = Assistant(tools=google_tools if google_tools else None)
 
     session = AgentSession(
         stt="deepgram/nova-3:multi",
-        llm="google/gemini-3.1-flash-lite-preview",
+        llm="google/gemini-2.5-flash",
         tts=elevenlabs.TTS(
             voice_id=_env("ELEVENLABS_VOICE_ID") or "ZMWIEDLYkh84bAIlHt0B",
             model="eleven_flash_v2_5",
@@ -197,11 +290,48 @@ async def entrypoint(ctx: JobContext):
     )
 
     usage_collector = metrics.UsageCollector()
+    asyncio_tasks: set[asyncio.Task[None]] = set()
 
     @session.on("metrics_collected")
     def _on_metrics_collected(ev: MetricsCollectedEvent):
         metrics.log_metrics(ev.metrics)
         usage_collector.collect(ev.metrics)
+
+    @session.on("function_tools_executed")
+    def _on_function_tools_executed(ev: FunctionToolsExecutedEvent) -> None:
+        rows = _extract_tool_rows_from_event(ev, include_outputs=True)
+        if not rows:
+            return
+
+        payload = json.dumps({"v": 2, "phase": "completed", "tools": rows})
+
+        async def _send_tool_notice() -> None:
+            try:
+                await ctx.room.local_participant.send_text(payload, topic=AGENT_TOOL_TOPIC)
+            except Exception as e:
+                logger.warning("failed to publish tool notice to room: %s", e)
+
+        task = asyncio.create_task(_send_tool_notice())
+        asyncio_tasks.add(task)
+        task.add_done_callback(asyncio_tasks.discard)
+
+    @session.on("function_tools_executing")
+    def _on_function_tools_executing(ev: Any) -> None:
+        rows = _extract_tool_rows_from_event(ev, include_outputs=False)
+        if not rows:
+            return
+
+        payload = json.dumps({"v": 2, "phase": "running", "tools": rows})
+
+        async def _send_tool_running_notice() -> None:
+            try:
+                await ctx.room.local_participant.send_text(payload, topic=AGENT_TOOL_TOPIC)
+            except Exception as e:
+                logger.warning("failed to publish running tool notice to room: %s", e)
+
+        task = asyncio.create_task(_send_tool_running_notice())
+        asyncio_tasks.add(task)
+        task.add_done_callback(asyncio_tasks.discard)
 
     async def log_usage():
         summary = usage_collector.get_summary()
@@ -244,7 +374,58 @@ async def entrypoint(ctx: JobContext):
             noise_cancellation=noise_cancellation.BVC(),
         ),
     )
+    chat_tasks: set[asyncio.Task[None]] = set()
+
+    async def _handle_chat_text_stream(reader, participant_identity):
+        sender_identity = (
+            participant_identity
+            if isinstance(participant_identity, str)
+            else getattr(participant_identity, "identity", None)
+        )
+        if not sender_identity:
+            return
+
+        # Ignore agent/self-originated room messages.
+        if sender_identity == ctx.room.local_participant.identity:
+            return
+
+        sender = ctx.room.remote_participants.get(sender_identity)
+        if sender and sender.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT:
+            return
+
+        chunks: list[str] = []
+        async for chunk in reader:
+            chunks.append(chunk)
+
+        text = "".join(chunks).strip()
+        if not text:
+            return
+
+        await session.interrupt()
+        session.generate_reply(user_input=text, input_modality="text")
+
+    def _on_chat_text_stream(reader, participant_identity):
+        task = asyncio.create_task(_handle_chat_text_stream(reader, participant_identity))
+        chat_tasks.add(task)
+        task.add_done_callback(chat_tasks.discard)
+
+    ctx.room.register_text_stream_handler("lk.chat", _on_chat_text_stream)
     await ctx.connect()
+
+    async def _publish_tool_catalog() -> None:
+        try:
+            catalog = _collect_tool_catalog_rows(agent)
+            payload = json.dumps({"v": 1, "tools": catalog})
+            await ctx.room.local_participant.send_text(
+                payload,
+                topic=AGENT_TOOL_CATALOG_TOPIC,
+            )
+        except Exception as e:
+            logger.warning("failed to publish tool catalog: %s", e)
+
+    task_catalog = asyncio.create_task(_publish_tool_catalog())
+    asyncio_tasks.add(task_catalog)
+    task_catalog.add_done_callback(asyncio_tasks.discard)
 
 
 if __name__ == "__main__":
