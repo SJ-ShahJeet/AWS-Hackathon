@@ -29,6 +29,33 @@ async def close_pool():
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 CREATE_TABLES = """
+CREATE TABLE IF NOT EXISTS families (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id          TEXT PRIMARY KEY,
+    auth0_sub   TEXT UNIQUE NOT NULL,
+    email       TEXT,
+    role        TEXT NOT NULL,
+    family_id   TEXT NOT NULL REFERENCES families(id),
+    display_name TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO families (id, name) VALUES ('shah-family', 'Shah Family')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO users (id, auth0_sub, email, role, family_id, display_name)
+VALUES ('sophie-001', 'pending-child', 'child@penny.com', 'child', 'shah-family', 'Sophie')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO users (id, auth0_sub, email, role, family_id, display_name)
+VALUES ('parent-001', 'pending-parent', 'parent@penny.com', 'parent', 'shah-family', 'Parent')
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS chores (
     id          TEXT PRIMARY KEY,
     child_id    TEXT NOT NULL,
@@ -128,6 +155,35 @@ async def update_chore_status(chore_id: str, status: str, parent_note: str | Non
         return dict(row) if row else {}
 
 
+async def approve_chore_atomic(chore_id: str, reward: float) -> dict:
+    """Approve chore and update balance in a single transaction."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            chore = await conn.fetchrow("""
+                UPDATE chores
+                SET status = 'approved', updated_at = NOW()
+                WHERE id = $1 AND status = 'pending'
+                RETURNING *
+            """, chore_id)
+            if not chore:
+                raise ValueError(f"Chore {chore_id} not found or already processed")
+
+            balance_row = await conn.fetchrow("""
+                UPDATE child_balances
+                SET balance = balance + $1, updated_at = NOW()
+                WHERE child_id = $2
+                RETURNING balance
+            """, reward, chore["child_id"])
+
+            new_balance = float(balance_row["balance"]) if balance_row else 0.0
+            return {
+                "chore": dict(chore),
+                "child_id": chore["child_id"],
+                "new_balance": new_balance,
+            }
+
+
 async def update_chore_proof(chore_id: str, proof_url: str) -> dict:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -220,4 +276,70 @@ async def get_portfolio(child_id: str) -> list[dict]:
             "SELECT * FROM portfolio_holdings WHERE child_id = $1 ORDER BY updated_at DESC",
             child_id
         )
+        return [dict(r) for r in rows]
+
+
+# ── Users ────────────────────────────────────────────────────────────────────
+
+async def upsert_user(auth0_sub: str, email: str | None, role: str,
+                       family_id: str = "shah-family") -> dict:
+    """Create or update a user on first login. Returns user row."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # Try to find by auth0_sub first
+        existing = await conn.fetchrow(
+            "SELECT * FROM users WHERE auth0_sub = $1", auth0_sub
+        )
+        if existing:
+            return dict(existing)
+
+        # Try to find by email (seed rows have placeholder auth0_sub)
+        if email:
+            by_email = await conn.fetchrow(
+                "SELECT * FROM users WHERE email = $1", email
+            )
+            if by_email:
+                await conn.execute(
+                    "UPDATE users SET auth0_sub = $1 WHERE id = $2",
+                    auth0_sub, by_email["id"]
+                )
+                return dict(by_email)
+
+        # Completely new user — create
+        user_id = f"{role}-{auth0_sub.split('|')[-1][:8]}"
+        row = await conn.fetchrow("""
+            INSERT INTO users (id, auth0_sub, email, role, family_id, display_name)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *
+        """, user_id, auth0_sub, email, role, family_id,
+            email.split('@')[0] if email else role)
+
+        if role == "child":
+            await conn.execute("""
+                INSERT INTO child_balances (child_id, name, balance, threshold)
+                VALUES ($1, $2, 0, 50.00)
+                ON CONFLICT (child_id) DO NOTHING
+            """, user_id, email.split('@')[0] if email else "Child")
+
+        return dict(row)
+
+
+async def get_user_by_sub(auth0_sub: str) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM users WHERE auth0_sub = $1", auth0_sub
+        )
+        return dict(row) if row else None
+
+
+async def get_children_for_parent(parent_id: str) -> list[dict]:
+    """Get all children in the same family as the given parent."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT u.* FROM users u
+            JOIN users parent ON parent.family_id = u.family_id
+            WHERE parent.id = $1 AND u.role = 'child'
+        """, parent_id)
         return [dict(r) for r in rows]

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import type { Chore } from '../lib/mockData';
 import { api } from '../lib/api';
+import { useAppAuth } from '../App';
 import CoinBalance from '../components/child/CoinBalance';
 import PennyAvatar from '../components/child/PennyAvatar';
 import ChoreTracker from '../components/child/ChoreTracker';
@@ -13,7 +13,7 @@ const CHILD_NAME = 'Sophie';
 const DEFAULT_THRESHOLD = 50;
 
 export default function ChildDashboard() {
-  const navigate = useNavigate();
+  const { logout } = useAppAuth();
   const [chores, setChores] = useState<Chore[]>([]);
   const [balance, setBalance] = useState(0);
   const [threshold] = useState(DEFAULT_THRESHOLD);
@@ -47,8 +47,7 @@ export default function ChildDashboard() {
   }, []);
 
   const handleLogout = () => {
-    sessionStorage.removeItem('demo_role');
-    navigate('/login');
+    logout();
   };
 
   return (
@@ -60,9 +59,14 @@ export default function ChildDashboard() {
             <span className="text-2xl">🪙</span>
             <span className="font-black text-xl text-violet-700">Penny</span>
           </div>
-          <button onClick={handleLogout} className="text-sm text-stone-400 hover:text-stone-600 transition-colors">
-            Sign out
-          </button>
+          <div className="flex items-center gap-4">
+            <a href="/care" className="text-sm text-violet-600 hover:text-violet-800 font-medium transition-colors">
+              📞 Customer Care
+            </a>
+            <button onClick={handleLogout} className="text-sm text-stone-400 hover:text-stone-600 transition-colors">
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 

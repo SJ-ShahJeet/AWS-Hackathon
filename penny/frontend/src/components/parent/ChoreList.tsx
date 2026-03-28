@@ -8,25 +8,48 @@ interface Props {
   currentBalance: number;
 }
 
-export default function ChoreList({ chores, onBalanceChange, currentBalance }: Props) {
+export default function ChoreList({ chores, onBalanceChange, currentBalance: _currentBalance }: Props) {
   const [statuses, setStatuses] = useState<Record<string, ChoreStatus>>(
     Object.fromEntries(chores.map((c) => [c.id, c.status]))
   );
   const [proofModal, setProofModal] = useState<string | null>(null);
 
+  const [loading, setLoading] = useState<string | null>(null);
+
   const approve = async (chore: Chore) => {
     console.log('[PARENT][ChoreList] approve clicked', { choreId: chore.id, reward: chore.reward });
-    setStatuses((s) => ({ ...s, [chore.id]: 'approved' }));
-    const next = currentBalance + chore.reward;
-    onBalanceChange(next);
-    console.log('[PARENT][ChoreList] balance updated', { prev: currentBalance, next });
-    await api.chores.approve(chore.id, chore.reward);
+    setLoading(chore.id);
+    try {
+      const res = await api.chores.approve(chore.id, chore.reward);
+      if (res.success && res.data) {
+        setStatuses((s) => ({ ...s, [chore.id]: 'approved' }));
+        onBalanceChange(res.data.newBalance);
+        console.log('[PARENT][ChoreList] approved, new balance:', res.data.newBalance);
+      } else {
+        console.error('[PARENT][ChoreList] approve failed:', res.error);
+      }
+    } catch (err) {
+      console.error('[PARENT][ChoreList] approve error:', err);
+    } finally {
+      setLoading(null);
+    }
   };
 
   const reject = async (chore: Chore) => {
     console.log('[PARENT][ChoreList] reject clicked', { choreId: chore.id });
-    setStatuses((s) => ({ ...s, [chore.id]: 'rejected' }));
-    await api.chores.reject(chore.id);
+    setLoading(chore.id);
+    try {
+      const res = await api.chores.reject(chore.id);
+      if (res.success) {
+        setStatuses((s) => ({ ...s, [chore.id]: 'rejected' }));
+      } else {
+        console.error('[PARENT][ChoreList] reject failed:', res.error);
+      }
+    } catch (err) {
+      console.error('[PARENT][ChoreList] reject error:', err);
+    } finally {
+      setLoading(null);
+    }
   };
 
   return (
@@ -77,13 +100,15 @@ export default function ChoreList({ chores, onBalanceChange, currentBalance }: P
                   <div className="flex gap-2 shrink-0">
                     <button
                       onClick={() => approve(chore)}
-                      className="bg-green-500 hover:bg-green-600 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+                      disabled={loading === chore.id}
+                      className="bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
                     >
-                      Approve
+                      {loading === chore.id ? '...' : 'Approve'}
                     </button>
                     <button
                       onClick={() => reject(chore)}
-                      className="border border-red-200 text-red-500 hover:bg-red-50 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+                      disabled={loading === chore.id}
+                      className="border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
                     >
                       Reject
                     </button>

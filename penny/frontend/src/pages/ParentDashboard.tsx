@@ -1,23 +1,23 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { SOPHIE_INVESTMENT } from '../lib/mockData';
 import type { Chore, PortfolioHolding } from '../lib/mockData';
 import { api } from '../lib/api';
-
-const CHILD_ID = 'sophie-001';
-const CHILD_NAME = 'Sophie';
-const DEFAULT_THRESHOLD = 50;
+import { useAppAuth } from '../App';
 import ChoreList from '../components/parent/ChoreList';
 import InvestmentApproval from '../components/parent/InvestmentApproval';
 import WeeklyReport from '../components/parent/WeeklyReport';
 import Portfolio from '../components/parent/Portfolio';
+
+const CHILD_ID = 'sophie-001';
+const CHILD_NAME = 'Sophie';
+const DEFAULT_THRESHOLD = 50;
 
 export default function ParentDashboard() {
   const [balance, setBalance] = useState<number>(0);
   const [chores, setChores] = useState<Chore[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioHolding[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  const { logout } = useAppAuth();
 
   const threshold = DEFAULT_THRESHOLD;
   const thresholdReached = balance >= threshold;
@@ -68,8 +68,7 @@ export default function ParentDashboard() {
   }, []);
 
   const handleLogout = () => {
-    sessionStorage.removeItem('demo_role');
-    navigate('/login');
+    logout();
   };
 
   return (
@@ -84,7 +83,9 @@ export default function ParentDashboard() {
             <span className="text-slate-400 text-sm">Parent Dashboard</span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-500">Welcome back</span>
+            <a href="/care" className="text-sm text-violet-600 hover:text-violet-800 font-medium transition-colors">
+              📞 Customer Care
+            </a>
             <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-slate-600 transition-colors">
               Sign out
             </button>

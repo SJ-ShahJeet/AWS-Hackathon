@@ -43,7 +43,17 @@ async function get<T>(path: string): Promise<T> {
   return json as T;
 }
 
+export interface UserIdentity {
+  id: string;
+  role: 'parent' | 'child';
+  family_id: string;
+  display_name: string;
+  email: string;
+  children?: { id: string; display_name: string }[];
+}
+
 export const api = {
+  me: () => get<ApiResponse<UserIdentity>>('/me'),
   chores: {
     list: (childId: string) =>
       get<ApiResponse<Chore[]>>(`/chores/list/${childId}`),

@@ -7,8 +7,10 @@ from models import ApiResponse, ChoreApproveRequest, ChoreRejectRequest, ChorePr
 from lib.auth import require_role
 from lib.db import (
     insert_chore, get_chores, update_chore_status,
-    update_chore_proof, add_to_balance, get_balance
+    update_chore_proof, add_to_balance, get_balance,
+    approve_chore_atomic, get_children_for_parent
 )
+from lib.auth import get_current_user
 from lib.logger import logger
 
 router = APIRouter(prefix="/api/chores", tags=["chores"])
@@ -52,10 +54,20 @@ async def create_chore(body: dict):
 async def approve_chore(body: ChoreApproveRequest, _=Depends(require_role("parent"))):
     logger.info("[API][chores/approve] START", extra={"choreId": body.choreId, "reward": body.reward})
     try:
-        chore = await update_chore_status(body.choreId, "approved")
-        new_balance = await add_to_balance("sophie-001", body.reward)
-        logger.info("[API][chores/approve] SUCCESS", extra={"choreId": body.choreId, "newBalance": new_balance})
-        return ApiResponse(success=True, data={"choreId": body.choreId, "newBalance": float(new_balance)})
+        # Atomic: update status + add balance in one transaction
+        result = await approve_chore_atomic(body.choreId, body.reward)
+        logger.info("[API][chores/approve] SUCCESS", extra={
+            "choreId": body.choreId,
+            "childId": result["child_id"],
+            "newBalance": result["new_balance"],
+        })
+        return ApiResponse(success=True, data={
+            "choreId": body.choreId,
+            "newBalance": result["new_balance"],
+        })
+    except ValueError as e:
+        logger.warning("[API][chores/approve] REJECTED", extra={"error": str(e)})
+        return ApiResponse(success=False, error=str(e))
     except Exception as e:
         logger.error("[API][chores/approve] ERROR", extra={"error": str(e)})
         return ApiResponse(success=False, error=str(e))
